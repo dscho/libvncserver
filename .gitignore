@@ -80,3 +80,4 @@ cmake_install.cmake
 /CMakeFiles
 /rfbproto.pdf
 /rfbproto.rst
+/vencrypt.txt
