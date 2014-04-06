@@ -690,8 +690,8 @@ typedef struct _rfbClientRec {
 #endif
 #endif
 
-#ifdef LIBVNCSERVER_WITH_WEBSOCKETS
     rfbSslCtx *sslctx;
+#ifdef LIBVNCSERVER_WITH_WEBSOCKETS
     wsCtx     *wsctx;
     char *wspath;                          /* Requests path component */
 #endif
