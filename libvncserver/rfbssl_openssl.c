@@ -75,6 +75,7 @@ int rfbssl_init(rfbClientPtr cl)
 	}
 	if (r < 0) {
 	    rfbErr("SSL_accept failed %d\n", SSL_get_error(ctx->ssl, r));
+	    rfbssl_error();
 	} else {
 	    cl->sslctx = (rfbSslCtx *)ctx;
 	    ret = 0;
