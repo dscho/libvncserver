@@ -58,9 +58,9 @@ int rfbssl_init(rfbClientPtr cl)
 	rfbErr("SSL connection but no cert specified\n");
     } else if (NULL == (ctx->ssl_ctx = SSL_CTX_new(TLSv1_server_method()))) {
 	rfbssl_error();
-    } else if (SSL_CTX_use_PrivateKey_file(ctx->ssl_ctx, keyfile, SSL_FILETYPE_PEM) <= 0) {
+    } else if (keyfile && SSL_CTX_use_PrivateKey_file(ctx->ssl_ctx, keyfile, SSL_FILETYPE_PEM) <= 0) {
 	rfbErr("Unable to load private key file %s\n", keyfile);
-    } else if (SSL_CTX_use_certificate_file(ctx->ssl_ctx, cl->screen->sslcertfile, SSL_FILETYPE_PEM) <= 0) {
+    } else if (cl->screen->sslcertfile && SSL_CTX_use_certificate_file(ctx->ssl_ctx, cl->screen->sslcertfile, SSL_FILETYPE_PEM) <= 0) {
 	rfbErr("Unable to load certificate file %s\n", cl->screen->sslcertfile);
     } else if (NULL == (ctx->ssl = SSL_new(ctx->ssl_ctx))) {
 	rfbErr("SSL_new failed\n");
