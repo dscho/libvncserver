@@ -47,18 +47,20 @@ static void rfbssl_error(const char *msg, int e)
     rfbErr("%s: %s (%ld)\n", msg, gnutls_strerror(e), e);
 }
 
-static int rfbssl_init_session(struct rfbssl_ctx *ctx, int fd)
+static int rfbssl_init_session(struct rfbssl_ctx *ctx, int fd, int anonTLS)
 {
     gnutls_session_t session;
     int ret;
 
     if (!GNUTLS_E_SUCCESS == (ret = gnutls_init(&session, GNUTLS_SERVER))) {
       /* */
-    } else if (!GNUTLS_E_SUCCESS == (ret = gnutls_priority_set_direct(session, "EXPORT", NULL))) {
+    } else if (!GNUTLS_E_SUCCESS == (ret = gnutls_priority_set_direct(session, anonTLS ? "NORMAL:+ANON-DH" : "EXPORT", NULL))) {
       /* */
-    } else if (!GNUTLS_E_SUCCESS == (ret = gnutls_credentials_set(session, GNUTLS_CRD_CERTIFICATE, ctx->x509_cred))) {
+    } else if (!GNUTLS_E_SUCCESS == (ret = gnutls_credentials_set(session, anonTLS ? GNUTLS_CRD_ANON : GNUTLS_CRD_CERTIFICATE, ctx->x509_cred))) {
       /* */
     } else {
+      if (anonTLS)
+        gnutls_dh_set_prime_bits (session, 1024 /* Diffie-Hellmann bits */);
       gnutls_session_enable_compatibility_mode(session);
       gnutls_transport_set_ptr(session, (gnutls_transport_ptr_t)(uintptr_t)fd);
       ctx->session = session;
@@ -89,15 +91,15 @@ struct rfbssl_ctx *rfbssl_init_global(char *key, char *cert)
     int ret = GNUTLS_E_SUCCESS;
     struct rfbssl_ctx *ctx = NULL;
 
-    if (NULL == (ctx = malloc(sizeof(struct rfbssl_ctx)))) {
+    if (NULL == (ctx = calloc(sizeof(*ctx), 1))) {
 	ret = GNUTLS_E_MEMORY_ERROR;
     } else if (!GNUTLS_E_SUCCESS == (ret = gnutls_global_init())) {
 	/* */
     } else if (!GNUTLS_E_SUCCESS == (ret = gnutls_certificate_allocate_credentials(&ctx->x509_cred))) {
 	/* */
-    } else if ((ret = gnutls_certificate_set_x509_trust_file(ctx->x509_cred, cert, GNUTLS_X509_FMT_PEM)) < 0) {
+    } else if (cert && (ret = gnutls_certificate_set_x509_trust_file(ctx->x509_cred, cert, GNUTLS_X509_FMT_PEM)) < 0) {
 	/* */
-    } else if (!GNUTLS_E_SUCCESS == (ret = gnutls_certificate_set_x509_key_file(ctx->x509_cred, cert, key, GNUTLS_X509_FMT_PEM))) {
+    } else if (cert && !GNUTLS_E_SUCCESS == (ret = gnutls_certificate_set_x509_key_file(ctx->x509_cred, cert, key, GNUTLS_X509_FMT_PEM))) {
 	/* */
     } else if (!GNUTLS_E_SUCCESS == (ret = generate_dh_params(ctx))) {
 	/* */
@@ -126,7 +128,8 @@ int rfbssl_init(rfbClientPtr cl)
 
     if (NULL == (ctx = rfbssl_init_global(keyfile,  cl->screen->sslcertfile))) {
 	/* */
-    } else if (GNUTLS_E_SUCCESS != (ret = rfbssl_init_session(ctx, cl->sock))) {
+    } else if (GNUTLS_E_SUCCESS != (ret = rfbssl_init_session(ctx, cl->sock,
+            keyfile == NULL))) {
 	/* */
     } else {
 	while (GNUTLS_E_SUCCESS != (ret = gnutls_handshake(ctx->session))) {
