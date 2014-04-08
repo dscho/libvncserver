@@ -28,6 +28,7 @@
  */
 
 #include <rfb/rfb.h>
+#include "rfbssl.h"
 
 /* RFB 3.8 clients are well informed */
 void rfbClientSendString(rfbClientPtr cl, const char *reason);
@@ -196,7 +197,89 @@ static rfbSecurityHandler VncSecurityHandlerNone = {
     rfbVncAuthNone,
     NULL
 };
-                        
+
+#if defined(LIBVNCSERVER_HAVE_GNUTLS) || defined(LIBVNCSERVER_HAVE_LIBSSL)
+static int write_exact(rfbClientPtr cl, char *buffer, int size)
+{
+    if (rfbWriteExact(cl, buffer, size) >= 0) {
+        return 0;
+    }
+    rfbLogPerror("rfbVncAuthVeNCrypt: write");
+    rfbCloseClient(cl);
+    return -1;
+}
+
+static int read_exact(rfbClientPtr cl, char *buffer, int size)
+{
+    int n;
+
+    n = rfbReadExact(cl, buffer, size);
+    if (n <= 0) {
+	if (n == 0)
+	    rfbLog("rfbVncAuthVeNCrypt: client gone\n");
+	else
+	    rfbLogPerror("rfbVncAuthVeNCrypt: read");
+	rfbCloseClient(cl);
+	return -1;
+    }
+    return 0;
+}
+
+static void
+rfbVncAuthVeNCrypt(rfbClientPtr cl)
+{
+    char buffer[32];
+    uint32_t value32;
+
+    if (write_exact(cl, "\x00\x02", 2)) return;
+
+    if (read_exact(cl, (char *)&buffer, 2)) return;
+
+    rfbLog("Client desires VeNCrypt version %d.%d\n",
+        (int)buffer[0], (int)buffer[1]);
+    if (buffer[0] != '\0' || buffer[1] != '\x02') {
+        write_exact(cl, "\xff", 1); /* failure */
+        rfbLog("Unsupported VeNCrypt version\n");
+        rfbCloseClient(cl);
+        return;
+    }
+
+    if (write_exact(cl, "\x00", 1)) return;
+
+    /* TODO: support more than just TLSNone */
+    if (write_exact(cl, "\x01", 1)) return;
+    value32 = Swap32IfLE(rfbVeNCryptTLSNone);
+    if (write_exact(cl, (char *)&value32, 4)) return;
+
+    if (read_exact(cl, (char *)&value32, 4)) return;
+    value32 = Swap32IfLE(value32);
+    if (value32 != rfbVeNCryptTLSNone) {
+        rfbCloseClient(cl);
+    }
+
+    /*
+     * This is not documented in https://www.berrange.com/~dan/vencrypt.txt
+     * but expected by libvncclient and TigerVNC's Java viewer, so it must be
+     * correct.
+     */
+    if (write_exact(cl, "\x01", 1)) return;
+
+    rfbssl_init(cl);
+
+    /* TLSNone automatically authenticates okay */
+    value32 = Swap32IfLE(rfbVncAuthOK);
+    if (write_exact(cl, (char *)&value32, 4)) return;
+
+    cl->state = RFB_INITIALISATION;
+}
+
+static rfbSecurityHandler VeNCryptSecurityHandler = {
+    rfbVeNCrypt,
+    rfbVncAuthVeNCrypt,
+    NULL
+};
+#endif
+
 
 static void
 rfbSendSecurityTypeList(rfbClientPtr cl, int primaryType)
@@ -218,6 +301,10 @@ rfbSendSecurityTypeList(rfbClientPtr cl, int primaryType)
         rfbRegisterSecurityHandler(&VncSecurityHandlerVncAuth);
         break;
     }
+
+#if defined(LIBVNCSERVER_HAVE_GNUTLS) || defined(LIBVNCSERVER_HAVE_LIBSSL)
+    rfbRegisterSecurityHandler(&VeNCryptSecurityHandler);
+#endif
 
     for (handler = securityHandlers;
 	    handler && size<MAX_SECURITY_TYPES; handler = handler->next) {
