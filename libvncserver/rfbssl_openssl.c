@@ -69,6 +69,10 @@ int rfbssl_init(rfbClientPtr cl)
 	rfbErr("SSL_set_fd failed\n");
 	rfbssl_error();
     } else {
+	if (!keyfile && !SSL_CTX_set_cipher_list(ctx->ssl_ctx, "ADH:@STRENGTH")) {
+	    rfbErr("SSL_CTX_set_cipher_list for anonymous Diffie-Hellmann failed\n");
+	    rfbssl_error();
+	}
 	while ((r = SSL_accept(ctx->ssl)) < 0) {
 	    if (SSL_get_error(ctx->ssl, r) != SSL_ERROR_WANT_READ)
 		break;
