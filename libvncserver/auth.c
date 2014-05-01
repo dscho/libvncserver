@@ -230,6 +230,7 @@ rfbVncAuthVeNCrypt(rfbClientPtr cl)
 {
     char buffer[32];
     uint32_t value32;
+    int securityType;
 
     if (write_exact(cl, "\x00\x02", 2)) return;
 
@@ -246,15 +247,26 @@ rfbVncAuthVeNCrypt(rfbClientPtr cl)
 
     if (write_exact(cl, "\x00", 1)) return;
 
-    /* TODO: support more than just TLSNone */
-    if (write_exact(cl, "\x01", 1)) return;
-    value32 = Swap32IfLE(rfbVeNCryptTLSNone);
-    if (write_exact(cl, (char *)&value32, 4)) return;
+    if (cl->screen->authPasswdData) {
+        if (write_exact(cl, "\x01", 1)) return;
+        value32 = Swap32IfLE(rfbVeNCryptTLSVNC);
+        if (write_exact(cl, (char *)&value32, 4)) return;
+    } else {
+        if (write_exact(cl, "\x01", 1)) return;
+        value32 = Swap32IfLE(rfbVeNCryptTLSNone);
+        if (write_exact(cl, (char *)&value32, 4)) return;
+    }
 
     if (read_exact(cl, (char *)&value32, 4)) return;
-    value32 = Swap32IfLE(value32);
-    if (value32 != rfbVeNCryptTLSNone) {
-        rfbCloseClient(cl);
+    securityType = Swap32IfLE(value32);
+    if (cl->screen->authPasswdData) {
+        if (securityType != rfbVeNCryptTLSVNC) {
+            rfbCloseClient(cl);
+        }
+    } else {
+        if (securityType != rfbVeNCryptTLSNone) {
+            rfbCloseClient(cl);
+        }
     }
 
     /*
@@ -266,11 +278,22 @@ rfbVncAuthVeNCrypt(rfbClientPtr cl)
 
     rfbssl_init(cl);
 
-    /* TLSNone automatically authenticates okay */
-    value32 = Swap32IfLE(rfbVncAuthOK);
-    if (write_exact(cl, (char *)&value32, 4)) return;
+    if (securityType == rfbVeNCryptTLSVNC) {
+        if (write_exact(cl, "\x01", 1)) return;
+        /*value32 = Swap32IfLE(rfbVncAuthOK);
+        if (write_exact(cl, (char *)&value32, 4)) return;*/
+        rfbVncAuthSendChallenge(cl);
+        rfbAuthProcessClientMessage(cl);
+    } else if (securityType == rfbVeNCryptTLSNone) {
+        /* TLSNone automatically authenticates okay */
+        value32 = Swap32IfLE(rfbVncAuthOK);
+        if (write_exact(cl, (char *)&value32, 4)) return;
 
-    cl->state = RFB_INITIALISATION;
+        cl->state = RFB_INITIALISATION;
+    } else {
+        rfbLog("rfbVncAuthVeNCrypt: invalid security type: %d\n", securityType);
+        rfbCloseClient(cl);
+    }
 }
 
 static rfbSecurityHandler VeNCryptSecurityHandler = {
